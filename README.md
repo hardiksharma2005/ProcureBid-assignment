@@ -30,10 +30,11 @@ Server-side Supabase access always goes through one of two clients (`lib/supabas
    | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (base URL only, no path suffix) |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key, used by the browser client |
    | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key — server-only, bypasses RLS |
-   | `BUYER_EMAIL` | The single email allowed to sign in as the buyer |
+   | `BUYER_EMAILS` | Comma-separated list of emails allowed to sign in as a buyer, e.g. `a@x.com,b@y.com` (legacy single-value `BUYER_EMAIL` still works as a fallback) |
    | `GMAIL_USER` | Gmail address used as the SMTP sender |
    | `GMAIL_APP_PASSWORD` | Gmail [app password](https://myaccount.google.com/apppasswords) (not your account password) |
    | `GROQ_API_KEY` | Groq API key, used only by the optional AI-assist endpoint |
+   | `NEXT_PUBLIC_APP_URL` | Canonical public URL of the deployment, used to build absolute links (magic-link redirects, email links); falls back to the incoming request's own origin when unset |
 
 3. **Set up the database** — open your Supabase project's SQL Editor and run the full contents of [`supabase/schema.sql`](supabase/schema.sql). It creates the tables, RLS policies, table grants, and seeds 5 sample vendors. If you're re-running it against a database from an earlier version of this schema, see the "Migrations" section near the bottom of that file.
 
@@ -65,7 +66,7 @@ Higher total score wins. The buyer sees the full breakdown for every bid only af
 
 ## Security model
 
-- **Allowlist auth, not open signup.** Magic links are only sent to `BUYER_EMAIL` or an email already present in `vendors` (checked server-side in `POST /api/auth/request-link` before calling Supabase's `signInWithOtp`). Anyone can attempt to sign in; only allowlisted emails ever receive a link.
+- **Allowlist auth, not open signup.** Magic links are only sent to an email in `BUYER_EMAILS` or already present in `vendors` (checked server-side in `POST /api/auth/request-link` before calling Supabase's `signInWithOtp`). Anyone can attempt to sign in; only allowlisted emails ever receive a link.
 - **RLS + explicit grants on every table.** Row Level Security is enabled on `vendors`, `rfqs`, `bids`, and `awards`, with policies scoping reads/writes to `authenticated` users and their own rows. Table-level `GRANT`s are set explicitly rather than relying on Supabase's default privileges (see the comment in `supabase/schema.sql` — this is not always automatic).
 - **One sealed bid per vendor.** `UNIQUE(rfq_id, vendor_id)` on the `bids` table makes a second submission fail at the database level, not just in application code; the API surfaces this as a friendly 409.
 - **Sealed until close.** No route — buyer or vendor — returns another party's price while an RFQ's status is `draft` or `open`. The buyer-only reveal endpoint (`GET /api/rfqs/[id]/bids`) explicitly 403s until the RFQ is `closed`, `awarded`, or `reauction`.

@@ -1,5 +1,5 @@
-// One-off/repeatable script: creates a Supabase Auth user for the buyer
-// (BUYER_EMAIL) and every vendor currently in the `vendors` table.
+// One-off/repeatable script: creates a Supabase Auth user for every buyer
+// (BUYER_EMAILS) and every vendor currently in the `vendors` table.
 //
 // Why this exists: signInWithOtp() 500s the first time it tries to
 // auto-create a brand-new auth user on this project (even with "Allow new
@@ -38,11 +38,21 @@ function isAlreadyRegistered(error) {
   );
 }
 
+// BUYER_EMAILS is comma-separated; falls back to the legacy single-value
+// BUYER_EMAIL so this script keeps working mid-migration.
+function getBuyerEmails(env) {
+  const raw = env.BUYER_EMAILS ?? env.BUYER_EMAIL ?? "";
+  return raw
+    .split(",")
+    .map((email) => email.trim())
+    .filter(Boolean);
+}
+
 async function main() {
   const env = loadEnv();
   const url = env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  const buyerEmail = env.BUYER_EMAIL;
+  const buyerEmails = getBuyerEmails(env);
 
   if (!url || !serviceKey) {
     console.error(
@@ -62,12 +72,14 @@ async function main() {
     process.exit(1);
   }
 
-  if (!buyerEmail) {
-    console.warn("BUYER_EMAIL not set in .env.local — skipping buyer account.");
+  if (buyerEmails.length === 0) {
+    console.warn(
+      "BUYER_EMAILS (or legacy BUYER_EMAIL) not set in .env.local — skipping buyer account(s)."
+    );
   }
 
   const accounts = [
-    ...(buyerEmail ? [{ email: buyerEmail, name: "Buyer" }] : []),
+    ...buyerEmails.map((email) => ({ email, name: "Buyer" })),
     ...vendors.map((v) => ({ email: v.email, name: v.name })),
   ];
 
