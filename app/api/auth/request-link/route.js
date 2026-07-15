@@ -7,6 +7,14 @@ export async function POST(request) {
   const origin = getOrigin(request);
   const body = await request.json().catch(() => null);
   const email = typeof body?.email === "string" ? body.email.trim() : "";
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // TEMPORARY — remove after diagnosing. Never logs the actual env value.
+  console.log("buyer-check", {
+    received: normalizedEmail,
+    allowlistCount: (process.env.BUYER_EMAILS || process.env.BUYER_EMAIL || "").split(",").length,
+    hasEnv: !!process.env.BUYER_EMAILS,
+  });
 
   const role = email ? await getRole(email) : null;
 
