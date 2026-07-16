@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabaseServer";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getRole } from "@/lib/getRole";
 import { getOrigin } from "@/lib/getOrigin";
 
@@ -23,6 +24,29 @@ export async function POST(request) {
       { error: "This email is not registered on ProcureBid." },
       { status: 403 }
     );
+  }
+
+  // Evaluation-only bypass — still gated by the allowlist check above, just
+  // skips proving inbox ownership. See README "Security model".
+  if (process.env.DEMO_MODE === "true") {
+    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+    });
+
+    if (error || !data?.properties?.hashed_token) {
+      console.error("generateLink failed (demo mode)", error);
+      return NextResponse.json(
+        { error: "Something went wrong signing you in. Please try again." },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      demo: true,
+      token_hash: data.properties.hashed_token,
+      role,
+    });
   }
 
   const supabase = createClient();

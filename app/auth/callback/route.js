@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabaseServer";
 import { getRole } from "@/lib/getRole";
 import { getOrigin } from "@/lib/getOrigin";
+import { getRedirectPathForRole } from "@/lib/roleRedirect";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -14,13 +15,7 @@ export async function GET(request) {
 
     if (!error && data?.user?.email) {
       const role = await getRole(data.user.email);
-
-      if (role === "buyer") {
-        return NextResponse.redirect(`${origin}/buyer`);
-      }
-      if (role === "vendor") {
-        return NextResponse.redirect(`${origin}/vendor`);
-      }
+      return NextResponse.redirect(`${origin}${getRedirectPathForRole(role)}`);
     }
   }
 

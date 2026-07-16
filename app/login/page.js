@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { getRedirectPathForRole } from "@/lib/roleRedirect";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -20,10 +23,35 @@ export default function LoginPage() {
       });
       const body = await res.json();
 
-      setStatus({
-        type: res.ok ? "success" : "error",
-        message: res.ok ? body.message : body.error,
-      });
+      if (!res.ok) {
+        setStatus({ type: "error", message: body.error });
+        return;
+      }
+
+      if (body.demo) {
+        setVerifying(true);
+        const { error } = await supabase.auth.verifyOtp({
+          type: "email",
+          token_hash: body.token_hash,
+        });
+
+        if (error) {
+          setVerifying(false);
+          setStatus({
+            type: "error",
+            message: "Something went wrong signing you in. Please try again.",
+          });
+          return;
+        }
+
+        // Full navigation (not router.push) so the destination's
+        // server-rendered auth check reads the session cookie verifyOtp
+        // just set, rather than racing a client-side transition against it.
+        window.location.href = getRedirectPathForRole(body.role);
+        return;
+      }
+
+      setStatus({ type: "success", message: body.message });
     } catch {
       setStatus({
         type: "error",
@@ -61,14 +89,18 @@ export default function LoginPage() {
           </div>
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || verifying}
             className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50"
           >
-            {loading ? "Sending..." : "Send login link"}
+            {verifying ? "Signing you in..." : loading ? "Sending..." : "Send login link"}
           </button>
         </form>
 
-        {status && (
+        {verifying && (
+          <p className="mt-4 text-center text-sm text-slate-600">Signing you in…</p>
+        )}
+
+        {!verifying && status && (
           <p
             className={`mt-4 text-center text-sm ${
               status.type === "success" ? "text-green-600" : "text-red-600"
