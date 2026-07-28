@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import BidRevealPanel from "./BidRevealPanel";
+import ConfirmDialog from "./ConfirmDialog";
+import { useToast } from "./ToastProvider";
 
 const DEFAULT_FORM = {
   material: "",
@@ -48,10 +51,10 @@ export default function RfqDashboard() {
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [publishingId, setPublishingId] = useState(null);
-  const [publishNotice, setPublishNotice] = useState(null);
   const [viewingRfq, setViewingRfq] = useState(null);
   const [relaunchingId, setRelaunchingId] = useState(null);
-  const [relaunchNotice, setRelaunchNotice] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null); // { type: "publish" | "relaunch", rfq }
+  const { push: pushToast } = useToast();
   const [aiText, setAiText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
@@ -211,63 +214,61 @@ export default function RfqDashboard() {
     setRfqs((prev) => prev.map((r) => (r.id === updatedRfq.id ? updatedRfq : r)));
   }
 
-  async function handlePublish(rfq) {
-    const confirmed = window.confirm(
-      `Publish "${rfq.material}" and notify all vendors by email? This cannot be undone.`
-    );
-    if (!confirmed) return;
+  function requestPublish(rfq) {
+    setConfirmDialog({ type: "publish", rfq });
+  }
 
+  function requestRelaunch(rfq) {
+    setConfirmDialog({ type: "relaunch", rfq });
+  }
+
+  async function handlePublish(rfq) {
     setPublishingId(rfq.id);
-    setPublishNotice(null);
     try {
       const res = await fetch(`/api/rfqs/${rfq.id}/publish`, { method: "POST" });
       const body = await res.json();
 
       if (!res.ok) {
-        setPublishNotice({ type: "error", message: body.error ?? "Failed to publish RFQ." });
+        pushToast({ variant: "error", message: body.error ?? "Failed to publish RFQ." });
         return;
       }
 
       updateRfqInList(body.rfq);
-      setPublishNotice({
-        type: body.emailErrors > 0 ? "warning" : "success",
+      pushToast({
+        variant: body.emailErrors > 0 ? "info" : "success",
         message:
           body.emailErrors > 0
             ? `Published, but ${body.emailErrors} vendor email(s) failed to send.`
             : "Published — vendors have been notified.",
+        action: { label: "Open live monitor", href: `/buyer/monitor/${body.rfq.id}` },
       });
     } catch {
-      setPublishNotice({ type: "error", message: "Something went wrong. Please try again." });
+      pushToast({ variant: "error", message: "Something went wrong. Please try again." });
     } finally {
       setPublishingId(null);
+      setConfirmDialog(null);
     }
   }
 
   async function handleRelaunch(rfq) {
-    const confirmed = window.confirm(`Relaunch "${rfq.material}" as a new draft RFQ?`);
-    if (!confirmed) return;
-
     setRelaunchingId(rfq.id);
-    setRelaunchNotice(null);
     try {
       const res = await fetch(`/api/rfqs/${rfq.id}/relaunch`, { method: "POST" });
       const body = await res.json();
 
       if (!res.ok) {
-        setRelaunchNotice({ type: "error", message: body.error ?? "Failed to relaunch RFQ." });
+        pushToast({ variant: "error", message: body.error ?? "Failed to relaunch RFQ." });
         return;
       }
 
       setRfqs((prev) => [body, ...prev]);
       setViewingRfq(null);
-      setRelaunchNotice({
-        type: "success",
-        message: `Relaunched as a new draft RFQ: "${body.material}".`,
-      });
+      pushToast({ variant: "success", message: `Relaunched as a new draft RFQ: "${body.material}".` });
     } catch {
-      setRelaunchNotice({ type: "error", message: "Something went wrong. Please try again." });
+      pushToast({ variant: "error", message: "Something went wrong. Please try again." });
     } finally {
       setRelaunchingId(null);
+      setConfirmDialog(null);
     }
   }
 
@@ -419,30 +420,6 @@ export default function RfqDashboard() {
 
         {loadError && <p className="mt-2 text-sm text-red-600">{loadError}</p>}
 
-        {publishNotice && (
-          <p
-            className={`mt-2 text-sm ${
-              publishNotice.type === "success"
-                ? "text-green-600"
-                : publishNotice.type === "warning"
-                  ? "text-amber-600"
-                  : "text-red-600"
-            }`}
-          >
-            {publishNotice.message}
-          </p>
-        )}
-
-        {relaunchNotice && (
-          <p
-            className={`mt-2 text-sm ${
-              relaunchNotice.type === "success" ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            {relaunchNotice.message}
-          </p>
-        )}
-
         <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
@@ -497,12 +474,20 @@ export default function RfqDashboard() {
                     <div className="flex justify-end gap-2">
                       {rfq.status === "draft" && (
                         <button
-                          onClick={() => handlePublish(rfq)}
+                          onClick={() => requestPublish(rfq)}
                           disabled={publishingId === rfq.id}
                           className="rounded-md border border-indigo-600 px-3 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
                         >
                           {publishingId === rfq.id ? "Publishing..." : "Publish & notify vendors"}
                         </button>
+                      )}
+                      {rfq.status === "open" && (
+                        <Link
+                          href={`/buyer/monitor/${rfq.id}`}
+                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          Monitor
+                        </Link>
                       )}
                       {(rfq.status === "closed" ||
                         rfq.status === "awarded" ||
@@ -516,7 +501,7 @@ export default function RfqDashboard() {
                       )}
                       {rfq.status === "reauction" && (
                         <button
-                          onClick={() => handleRelaunch(rfq)}
+                          onClick={() => requestRelaunch(rfq)}
                           disabled={relaunchingId === rfq.id}
                           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50"
                         >
@@ -540,10 +525,36 @@ export default function RfqDashboard() {
             updateRfqInList(updated);
             setViewingRfq(updated);
           }}
-          onRelaunch={handleRelaunch}
+          onRelaunch={requestRelaunch}
           relaunching={relaunchingId === viewingRfq.id}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={
+          confirmDialog?.type === "publish"
+            ? `Publish "${confirmDialog.rfq.material}"?`
+            : `Relaunch "${confirmDialog?.rfq.material}"?`
+        }
+        message={
+          confirmDialog?.type === "publish"
+            ? "This notifies all vendors by email and cannot be undone."
+            : "This creates a new draft RFQ with the same details."
+        }
+        confirmLabel={confirmDialog?.type === "publish" ? "Publish" : "Relaunch"}
+        loading={
+          confirmDialog?.type === "publish"
+            ? publishingId === confirmDialog.rfq.id
+            : relaunchingId === confirmDialog?.rfq.id
+        }
+        onConfirm={() => {
+          if (!confirmDialog) return;
+          if (confirmDialog.type === "publish") handlePublish(confirmDialog.rfq);
+          else handleRelaunch(confirmDialog.rfq);
+        }}
+        onCancel={() => setConfirmDialog(null)}
+      />
     </div>
   );
 }

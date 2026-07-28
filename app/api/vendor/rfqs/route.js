@@ -48,9 +48,10 @@ export async function GET() {
     })
   );
 
-  // RFQs this vendor bid on that have since been decided (awarded or sent
-  // to re-auction) — surfaced so the vendor learns the outcome. Never
-  // includes other vendors' data, only whether *this* vendor won.
+  // RFQs this vendor bid on that are no longer open (closed and awaiting a
+  // decision, awarded, or sent to re-auction) — surfaced so the vendor's
+  // card flips instead of vanishing. Never includes other vendors' data,
+  // only whether *this* vendor won.
   const { data: myBids, error: myBidsError } = await supabaseAdmin
     .from("bids")
     .select("rfq_id")
@@ -68,7 +69,7 @@ export async function GET() {
       .from("rfqs")
       .select(RFQ_FIELDS)
       .in("id", myRfqIds)
-      .in("status", ["awarded", "reauction"]);
+      .in("status", ["closed", "awarded", "reauction"]);
 
     if (decidedError) {
       console.error("Failed to fetch decided RFQs", decidedError);
@@ -98,7 +99,9 @@ export async function GET() {
           ? winnerByRfq.get(rfq.id) === vendor.id
             ? "won"
             : "lost"
-          : "reauction";
+          : rfq.status === "closed"
+            ? "pending"
+            : "reauction";
 
       return { ...rfq, has_bid: true, outcome };
     });

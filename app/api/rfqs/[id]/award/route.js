@@ -26,6 +26,12 @@ export async function POST(request, { params }) {
 
   const { id } = params;
 
+  const body = await request.json().catch(() => null);
+  const requestedVendorId =
+    typeof body?.vendor_id === "string" && body.vendor_id ? body.vendor_id : null;
+  const reason =
+    typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
+
   const { data: rfq, error: rfqError } = await supabaseAdmin
     .from("rfqs")
     .select("*")
@@ -62,7 +68,13 @@ export async function POST(request, { params }) {
     );
   }
 
-  if (rankedBids.length >= 2 && round4(rankedBids[0].score) === round4(rankedBids[1].score)) {
+  // Tie detection only applies to the default L1 path — an explicit
+  // override bypasses it, since the buyer has already made an explicit choice.
+  if (
+    !requestedVendorId &&
+    rankedBids.length >= 2 &&
+    round4(rankedBids[0].score) === round4(rankedBids[1].score)
+  ) {
     const { data: updatedRfq } = await supabaseAdmin
       .from("rfqs")
       .update({ status: "reauction" })
@@ -73,13 +85,28 @@ export async function POST(request, { params }) {
     return NextResponse.json({ tie: true, rfq: updatedRfq });
   }
 
-  const winner = rankedBids[0];
-  const losers = rankedBids.slice(1);
+  let winner = rankedBids[0];
+
+  if (requestedVendorId) {
+    const chosen = rankedBids.find((bid) => bid.vendor_id === requestedVendorId);
+    if (!chosen) {
+      return NextResponse.json(
+        { error: "Selected vendor has no bid on this RFQ." },
+        { status: 400 }
+      );
+    }
+    winner = chosen;
+  }
+
+  const overridden = winner.vendor_id !== rankedBids[0].vendor_id;
+  const losers = rankedBids.filter((bid) => bid.vendor_id !== winner.vendor_id);
 
   const { error: awardError } = await supabaseAdmin.from("awards").insert({
     rfq_id: id,
     vendor_id: winner.vendor_id,
     winning_score: winner.score,
+    overridden,
+    award_reason: reason,
   });
 
   if (awardError) {

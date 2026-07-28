@@ -54,6 +54,8 @@ create table awards (
   rfq_id uuid unique references rfqs(id),
   vendor_id uuid references vendors(id),
   winning_score numeric,
+  award_reason text, -- buyer's stated reason, only meaningful when overridden
+  overridden boolean default false, -- true when the buyer awarded someone other than L1
   awarded_at timestamptz default now()
 );
 
@@ -138,6 +140,10 @@ grant all on public.vendors, public.rfqs, public.bids, public.awards to service_
 -- ----------------------------------------------------------------------------
 
 alter table rfqs add column if not exists window_minutes integer default 45;
+
+-- Run this if you already executed this file before award overrides existed.
+alter table awards add column if not exists award_reason text;
+alter table awards add column if not exists overridden boolean default false;
 
 -- ----------------------------------------------------------------------------
 -- Seed data

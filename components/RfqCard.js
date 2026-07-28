@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { computeScore } from "@/lib/scoring";
+import ConfirmDialog from "./ConfirmDialog";
+import { useToast } from "./ToastProvider";
 
 const URGENT_THRESHOLD_MS = 60_000;
 
@@ -46,20 +48,23 @@ function formatCountdown(ms) {
 }
 
 const OUTCOME_BADGE = {
+  closed: { label: "Awaiting result", className: "bg-slate-200 text-slate-600" },
   awarded: { label: "Awarded", className: "bg-indigo-100 text-indigo-700" },
   reauction: { label: "Re-auction", className: "bg-amber-100 text-amber-700" },
 };
 
 function RfqOutcomeCard({ rfq }) {
-  const badge = OUTCOME_BADGE[rfq.status];
+  const badge = OUTCOME_BADGE[rfq.status] ?? OUTCOME_BADGE.closed;
   const won = rfq.status === "awarded" && rfq.outcome === "won";
 
   const message =
-    rfq.status === "awarded"
-      ? won
-        ? "You won this contract 🎉"
-        : "Contract awarded to another vendor"
-      : "Re-auction pending — watch for a new invitation.";
+    rfq.status === "closed"
+      ? "Bidding has closed — awaiting the buyer's decision."
+      : rfq.status === "awarded"
+        ? won
+          ? "You won this contract 🎉"
+          : "Contract awarded to another vendor"
+        : "Re-auction pending — watch for a new invitation.";
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -98,11 +103,13 @@ export default function RfqCard({ rfq, onChanged }) {
   // the past).
   const isOpen = rfq.status === "open";
   const remainingMs = useCountdown(rfq.window_end, isOpen ? onChanged : undefined);
+  const { push: pushToast } = useToast();
 
   const [form, setForm] = useState({ price_inr: "", delivery_days: "" });
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!isOpen) {
     return <RfqOutcomeCard rfq={rfq} />;
@@ -111,7 +118,7 @@ export default function RfqCard({ rfq, onChanged }) {
   const closed = remainingMs <= 0;
   const urgent = !closed && remainingMs <= URGENT_THRESHOLD_MS;
 
-  async function handleSubmit(e) {
+  function handleSubmitClick(e) {
     e.preventDefault();
     setFormError(null);
 
@@ -127,10 +134,12 @@ export default function RfqCard({ rfq, onChanged }) {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Sealed bid — one submission only, it cannot be changed. Submit this bid?"
-    );
-    if (!confirmed) return;
+    setConfirmOpen(true);
+  }
+
+  async function handleConfirmSubmit() {
+    const price_inr = Number(form.price_inr);
+    const delivery_days = Number(form.delivery_days);
 
     setSubmitting(true);
     try {
@@ -142,16 +151,17 @@ export default function RfqCard({ rfq, onChanged }) {
       const body = await res.json();
 
       if (!res.ok) {
-        setFormError(body.error ?? "Failed to submit bid.");
+        pushToast({ variant: "error", message: body.error ?? "Failed to submit bid." });
         return;
       }
 
       setJustSubmitted({ price_inr, delivery_days, rank: body.rank, total_bids: body.total_bids });
       onChanged?.();
     } catch {
-      setFormError("Something went wrong. Please try again.");
+      pushToast({ variant: "error", message: "Something went wrong. Please try again." });
     } finally {
       setSubmitting(false);
+      setConfirmOpen(false);
     }
   }
 
@@ -229,7 +239,7 @@ export default function RfqCard({ rfq, onChanged }) {
       )}
 
       {!bidInfo && !closed && (
-        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+        <form onSubmit={handleSubmitClick} className="mt-4 space-y-3">
           <p className="text-xs font-medium text-amber-600">
             Sealed bid — one submission only, it cannot be changed.
           </p>
@@ -294,6 +304,16 @@ export default function RfqCard({ rfq, onChanged }) {
           Bidding closed — you did not submit a bid.
         </p>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Submit sealed bid?"
+        message="One submission only — it cannot be changed."
+        confirmLabel="Submit bid"
+        loading={submitting}
+        onConfirm={handleConfirmSubmit}
+        onCancel={() => !submitting && setConfirmOpen(false)}
+      />
     </div>
   );
 }

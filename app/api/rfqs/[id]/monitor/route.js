@@ -4,10 +4,9 @@ import { requireBuyer } from "@/lib/requireBuyer";
 import { closeExpiredRfqs } from "@/lib/closeExpired";
 import { getRankedBids } from "@/lib/rankBids";
 
-// Bids are sealed while an RFQ is still being bid on — only once it's
-// closed/awarded/reauction can even the buyer see who bid what. This is
-// the buyer-only reveal; never expose this route to vendors.
-const SEALED_STATUSES = new Set(["open", "draft"]);
+// The live monitor is buyer-only, unlike the vendor-facing views — it shows
+// every bidder's price and identity while the auction is still running.
+const MONITORABLE_STATUSES = new Set(["open", "closed", "awarded", "reauction"]);
 
 export async function GET(request, { params }) {
   const buyerEmail = await requireBuyer();
@@ -21,27 +20,27 @@ export async function GET(request, { params }) {
 
   const { data: rfq, error: rfqError } = await supabaseAdmin
     .from("rfqs")
-    .select("id, status, ceiling_price_inr")
+    .select("*")
     .eq("id", id)
     .maybeSingle();
 
   if (rfqError) {
-    console.error("Failed to fetch RFQ for bid reveal", rfqError);
+    console.error("Failed to fetch RFQ for monitor", rfqError);
     return NextResponse.json({ error: "Failed to fetch RFQ." }, { status: 500 });
   }
   if (!rfq) {
     return NextResponse.json({ error: "RFQ not found." }, { status: 404 });
   }
-  if (SEALED_STATUSES.has(rfq.status)) {
+  if (!MONITORABLE_STATUSES.has(rfq.status)) {
     return NextResponse.json(
-      { error: "Bids are sealed until the window closes." },
-      { status: 403 }
+      { error: "RFQ is not available for monitoring." },
+      { status: 400 }
     );
   }
 
   const rankedBids = await getRankedBids(id, rfq.ceiling_price_inr);
 
-  const reveal = rankedBids.map((bid, index) => ({
+  const bids = rankedBids.map((bid, index) => ({
     rank: index + 1,
     vendor_id: bid.vendor_id,
     vendor_name: bid.vendor_name,
@@ -52,21 +51,8 @@ export async function GET(request, { params }) {
     delivery_component: bid.delivery_component,
     rating_component: bid.rating_component,
     total: bid.score,
+    created_at: bid.created_at,
   }));
 
-  let award = null;
-  if (rfq.status === "awarded") {
-    const { data: awardRow, error: awardError } = await supabaseAdmin
-      .from("awards")
-      .select("vendor_id, winning_score, overridden, award_reason")
-      .eq("rfq_id", id)
-      .maybeSingle();
-
-    if (awardError) {
-      console.error("Failed to fetch award for reveal", awardError);
-    }
-    award = awardRow ?? null;
-  }
-
-  return NextResponse.json({ bids: reveal, award });
+  return NextResponse.json({ rfq, bids });
 }
