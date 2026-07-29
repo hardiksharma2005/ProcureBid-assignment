@@ -146,6 +146,48 @@ alter table awards add column if not exists award_reason text;
 alter table awards add column if not exists overridden boolean default false;
 
 -- ----------------------------------------------------------------------------
+-- Tier 1 migration — buyer controls (min decrement, auto-extend, pause/
+-- resume) and the activity/audit log. Safe to re-run (IF NOT EXISTS).
+-- ----------------------------------------------------------------------------
+
+alter table rfqs add column if not exists min_decrement_percent numeric default 0;
+alter table rfqs add column if not exists auto_extend_enabled boolean default true;
+alter table rfqs add column if not exists extension_count integer default 0;
+alter table rfqs add column if not exists paused_at timestamptz;
+alter table rfqs add column if not exists total_paused_ms bigint default 0;
+
+create table if not exists activity_log (
+  id uuid primary key default gen_random_uuid(),
+  rfq_id uuid references rfqs on delete cascade,
+  actor_email text,
+  actor_role text,
+  action text not null,
+  details jsonb,
+  created_at timestamptz default now()
+);
+
+alter table activity_log enable row level security;
+
+-- activity_log rows routinely contain OTHER vendors' prices and names
+-- (e.g. bid_placed, awarded details) — those must stay buyer-only. There is
+-- no buyers table to check "is this authenticated user a buyer" against in
+-- SQL (buyer status is an env var allowlist, checked only in application
+-- code via requireBuyer()), so RLS cannot safely grant buyers broad read
+-- access here. The buyer-only /api/rfqs/[id]/activity route reads via the
+-- service role instead, which bypasses RLS entirely.
+-- The one thing RLS *can* safely allow is a vendor reading their own
+-- actions back (mirrors the bids_select_own pattern) — this never exposes
+-- another vendor's data. All writes go through the service role from
+-- lib/auditLog.js, never directly from a client.
+create policy "activity_log_select_own_actions"
+  on activity_log for select
+  to authenticated
+  using (actor_email = auth.jwt() ->> 'email');
+
+grant select, insert on public.activity_log to service_role;
+grant select on public.activity_log to authenticated;
+
+-- ----------------------------------------------------------------------------
 -- Seed data
 -- ----------------------------------------------------------------------------
 

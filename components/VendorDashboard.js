@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import RfqCard from "./RfqCard";
+import { useToast } from "./ToastProvider";
 
 export default function VendorDashboard() {
   const [rfqs, setRfqs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const { push: pushToast } = useToast();
 
   const fetchRfqs = useCallback(async () => {
     try {
@@ -42,7 +44,13 @@ export default function VendorDashboard() {
       .map((id) =>
         supabase
           .channel(`rfq-${id}`)
-          .on("broadcast", { event: "bids_changed" }, () => {
+          .on("broadcast", { event: "bids_changed" }, ({ payload }) => {
+            if (payload?.extended) {
+              pushToast({
+                variant: "info",
+                message: "Window extended by 3 minutes — max 3 extensions.",
+              });
+            }
             fetchRfqs();
           })
           .subscribe()
@@ -51,7 +59,7 @@ export default function VendorDashboard() {
     return () => {
       channels.forEach((channel) => supabase.removeChannel(channel));
     };
-  }, [openIds, fetchRfqs]);
+  }, [openIds, fetchRfqs, pushToast]);
 
   if (loading) {
     return <p className="text-center text-slate-400">Loading...</p>;

@@ -7,7 +7,7 @@ import { useToast } from "./ToastProvider";
 
 const URGENT_THRESHOLD_MS = 60_000;
 
-function useCountdown(windowEnd, onExpire) {
+function useCountdown(windowEnd, active, onExpire) {
   const [remainingMs, setRemainingMs] = useState(
     () => new Date(windowEnd).getTime() - Date.now()
   );
@@ -15,6 +15,13 @@ function useCountdown(windowEnd, onExpire) {
   onExpireRef.current = onExpire;
 
   useEffect(() => {
+    // Re-sync immediately from the server-provided windowEnd whenever it
+    // changes (e.g. an auto-extension or a pause/resume shifted it) instead
+    // of continuing to count down from a stale local value.
+    setRemainingMs(new Date(windowEnd).getTime() - Date.now());
+
+    if (!active) return;
+
     const target = new Date(windowEnd).getTime();
     let firedExpire = false;
 
@@ -34,7 +41,7 @@ function useCountdown(windowEnd, onExpire) {
     tick();
 
     return () => clearInterval(id);
-  }, [windowEnd]);
+  }, [windowEnd, active]);
 
   return remainingMs;
 }
@@ -102,7 +109,8 @@ export default function RfqCard({ rfq, onChanged }) {
   // doesn't fire a spurious refetch on mount (its window_end is always in
   // the past).
   const isOpen = rfq.status === "open";
-  const remainingMs = useCountdown(rfq.window_end, isOpen ? onChanged : undefined);
+  const isPaused = isOpen && !!rfq.paused_at;
+  const remainingMs = useCountdown(rfq.window_end, isOpen && !isPaused, isOpen ? onChanged : undefined);
   const { push: pushToast } = useToast();
 
   const [form, setForm] = useState({ price_inr: "", delivery_days: "" });
@@ -117,6 +125,8 @@ export default function RfqCard({ rfq, onChanged }) {
 
   const closed = remainingMs <= 0;
   const urgent = !closed && remainingMs <= URGENT_THRESHOLD_MS;
+  const maxAcceptablePrice =
+    Number(rfq.ceiling_price_inr) * (1 - Number(rfq.min_decrement_percent ?? 0) / 100);
 
   function handleSubmitClick(e) {
     e.preventDefault();
@@ -125,8 +135,8 @@ export default function RfqCard({ rfq, onChanged }) {
     const price_inr = Number(form.price_inr);
     const delivery_days = Number(form.delivery_days);
 
-    if (!(price_inr > 0) || price_inr > rfq.ceiling_price_inr) {
-      setFormError(`Price must be a positive number, at most ₹${rfq.ceiling_price_inr}/kg.`);
+    if (!(price_inr > 0) || price_inr > maxAcceptablePrice) {
+      setFormError(`Price must be a positive number, at most ₹${maxAcceptablePrice.toFixed(2)}/kg.`);
       return;
     }
     if (!Number.isInteger(delivery_days) || delivery_days < 1 || delivery_days > 60) {
@@ -156,6 +166,12 @@ export default function RfqCard({ rfq, onChanged }) {
       }
 
       setJustSubmitted({ price_inr, delivery_days, rank: body.rank, total_bids: body.total_bids });
+      if (body.extended) {
+        pushToast({
+          variant: "info",
+          message: "Your bid arrived late — window extended by 3 minutes (max 3 extensions).",
+        });
+      }
       onChanged?.();
     } catch {
       pushToast({ variant: "error", message: "Something went wrong. Please try again." });
@@ -180,7 +196,7 @@ export default function RfqCard({ rfq, onChanged }) {
   const previewDelivery = Number(form.delivery_days);
   const previewScore =
     previewPrice > 0 &&
-    previewPrice <= rfq.ceiling_price_inr &&
+    previewPrice <= maxAcceptablePrice &&
     Number.isInteger(previewDelivery) &&
     previewDelivery >= 1 &&
     previewDelivery <= 60
@@ -199,16 +215,24 @@ export default function RfqCard({ rfq, onChanged }) {
         <h3 className="text-base font-semibold text-slate-900">{rfq.material}</h3>
         <span
           className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-            closed
-              ? "bg-slate-200 text-slate-600"
-              : urgent
-                ? "bg-red-100 text-red-700"
-                : "bg-green-100 text-green-700"
+            isPaused
+              ? "bg-amber-100 text-amber-700"
+              : closed
+                ? "bg-slate-200 text-slate-600"
+                : urgent
+                  ? "bg-red-100 text-red-700"
+                  : "bg-green-100 text-green-700"
           }`}
         >
-          {closed ? "Bidding closed" : formatCountdown(remainingMs)}
+          {isPaused ? "Paused" : closed ? "Bidding closed" : formatCountdown(remainingMs)}
         </span>
       </div>
+
+      {isPaused && (
+        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">
+          PAUSED by buyer — bidding temporarily frozen
+        </p>
+      )}
 
       <dl className="mt-3 space-y-1 text-sm text-slate-600">
         <div className="flex justify-between">
@@ -220,6 +244,12 @@ export default function RfqCard({ rfq, onChanged }) {
           <dd>&#8377;{rfq.ceiling_price_inr}/kg</dd>
         </div>
       </dl>
+
+      {!bidInfo && !closed && (
+        <p className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700">
+          Maximum acceptable bid: &#8377;{maxAcceptablePrice.toFixed(2)}/kg
+        </p>
+      )}
 
       {rfq.description && <p className="mt-2 text-sm text-slate-500">{rfq.description}</p>}
 
@@ -238,7 +268,7 @@ export default function RfqCard({ rfq, onChanged }) {
         </div>
       )}
 
-      {!bidInfo && !closed && (
+      {!bidInfo && !closed && !isPaused && (
         <form onSubmit={handleSubmitClick} className="mt-4 space-y-3">
           <p className="text-xs font-medium text-amber-600">
             Sealed bid — one submission only, it cannot be changed.

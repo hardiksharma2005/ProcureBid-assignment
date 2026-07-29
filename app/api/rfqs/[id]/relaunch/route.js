@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireBuyer } from "@/lib/requireBuyer";
+import { logActivity } from "@/lib/auditLog";
 
 export async function POST(request, { params }) {
   const buyerEmail = await requireBuyer();
@@ -41,6 +42,8 @@ export async function POST(request, { params }) {
       ceiling_price_inr: rfq.ceiling_price_inr,
       description,
       window_minutes: rfq.window_minutes,
+      min_decrement_percent: rfq.min_decrement_percent,
+      auto_extend_enabled: rfq.auto_extend_enabled,
       status: "draft",
     })
     .select()
@@ -50,6 +53,14 @@ export async function POST(request, { params }) {
     console.error("Failed to create relaunch RFQ", insertError);
     return NextResponse.json({ error: "Failed to relaunch RFQ." }, { status: 500 });
   }
+
+  await logActivity({
+    rfq_id: id,
+    actor_email: buyerEmail,
+    actor_role: "buyer",
+    action: "relaunched",
+    details: { new_rfq_id: newRfq.id },
+  });
 
   return NextResponse.json(newRfq, { status: 201 });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireBuyer } from "@/lib/requireBuyer";
 import { closeExpiredRfqs } from "@/lib/closeExpired";
+import { logActivity } from "@/lib/auditLog";
 
 const DEFAULT_WINDOW_MINUTES = 45;
 
@@ -18,6 +19,14 @@ function validateRfqInput(body) {
       ? DEFAULT_WINDOW_MINUTES
       : Number(rawWindow);
 
+  const rawDecrement = body?.min_decrement_percent;
+  const min_decrement_percent =
+    rawDecrement === undefined || rawDecrement === null || rawDecrement === ""
+      ? 0
+      : Number(rawDecrement);
+
+  const auto_extend_enabled = body?.auto_extend_enabled !== false;
+
   if (!material) {
     return { error: "Material is required." };
   }
@@ -30,6 +39,9 @@ function validateRfqInput(body) {
   if (!Number.isInteger(window_minutes) || window_minutes <= 0) {
     return { error: "Window minutes must be a positive whole number." };
   }
+  if (!Number.isFinite(min_decrement_percent) || min_decrement_percent < 0 || min_decrement_percent > 50) {
+    return { error: "Minimum discount off ceiling (%) must be between 0 and 50." };
+  }
 
   return {
     value: {
@@ -38,6 +50,8 @@ function validateRfqInput(body) {
       ceiling_price_inr,
       description: description || null,
       window_minutes,
+      min_decrement_percent,
+      auto_extend_enabled,
     },
   };
 }
@@ -65,6 +79,14 @@ export async function POST(request) {
     console.error("Failed to create RFQ", insertError);
     return NextResponse.json({ error: "Failed to create RFQ." }, { status: 500 });
   }
+
+  await logActivity({
+    rfq_id: data.id,
+    actor_email: buyerEmail,
+    actor_role: "buyer",
+    action: "rfq_created",
+    details: { material: data.material },
+  });
 
   return NextResponse.json(data, { status: 201 });
 }
