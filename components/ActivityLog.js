@@ -33,6 +33,10 @@ function describe(entry) {
         : `Awarded to ${d.vendor} (score ${Number(d.score).toFixed(2)})`;
     case "relaunched":
       return "Relaunched as a new draft RFQ";
+    case "rfq_archived":
+      return "Archived by buyer";
+    case "rfq_unarchived":
+      return "Unarchived by buyer";
     default:
       return entry.action;
   }
