@@ -12,18 +12,13 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;");
 }
 
-function buildInviteHtml({ rfq, windowEndIST, origin, maxAcceptablePrice }) {
+function buildInviteHtml({ rfq, windowEndIST, origin }) {
   return `
     <p>A new RFQ has been published on ProcureBid.</p>
     <table style="width:100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
       <tr><td style="padding:6px 0; color:#64748b;">Material</td><td style="padding:6px 0; font-weight:600;">${escapeHtml(rfq.material)}</td></tr>
       <tr><td style="padding:6px 0; color:#64748b;">Quantity</td><td style="padding:6px 0; font-weight:600;">${rfq.quantity_kg} kg</td></tr>
       <tr><td style="padding:6px 0; color:#64748b;">Ceiling price</td><td style="padding:6px 0; font-weight:600;">&#8377;${rfq.ceiling_price_inr} / kg</td></tr>
-      ${
-        rfq.min_decrement_percent > 0
-          ? `<tr><td style="padding:6px 0; color:#64748b;">Maximum acceptable bid</td><td style="padding:6px 0; font-weight:600;">&#8377;${maxAcceptablePrice} / kg (min. ${rfq.min_decrement_percent}% below ceiling)</td></tr>`
-          : ""
-      }
       ${
         rfq.description
           ? `<tr><td style="padding:6px 0; color:#64748b; vertical-align:top;">Description</td><td style="padding:6px 0;">${escapeHtml(rfq.description)}</td></tr>`
@@ -100,11 +95,6 @@ export async function POST(request, { params }) {
     timeStyle: "short",
   });
 
-  const maxAcceptablePrice = (
-    Number(updatedRfq.ceiling_price_inr) *
-    (1 - Number(updatedRfq.min_decrement_percent ?? 0) / 100)
-  ).toFixed(2);
-
   let emailErrors = 0;
 
   for (const vendor of vendors ?? []) {
@@ -112,7 +102,7 @@ export async function POST(request, { params }) {
       await sendMail({
         to: vendor.email,
         subject: `New RFQ: ${updatedRfq.material} — bidding open for ${windowMinutes} minutes`,
-        html: buildInviteHtml({ rfq: updatedRfq, windowEndIST, origin, maxAcceptablePrice }),
+        html: buildInviteHtml({ rfq: updatedRfq, windowEndIST, origin }),
       });
     } catch (err) {
       console.error(`Failed to send RFQ invite to ${vendor.email}`, err);

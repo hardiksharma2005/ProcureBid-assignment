@@ -29,9 +29,7 @@ export async function POST(request) {
 
   const { data: rfq, error: rfqError } = await supabaseAdmin
     .from("rfqs")
-    .select(
-      "id, status, window_end, ceiling_price_inr, min_decrement_percent, auto_extend_enabled, extension_count, paused_at"
-    )
+    .select("id, status, window_end, ceiling_price_inr, auto_extend_enabled, extension_count, paused_at")
     .eq("id", rfq_id)
     .maybeSingle();
 
@@ -52,18 +50,13 @@ export async function POST(request) {
     return NextResponse.json({ error: "Bidding is closed for this RFQ." }, { status: 400 });
   }
 
-  const maxAcceptablePrice =
-    Number(rfq.ceiling_price_inr) * (1 - Number(rfq.min_decrement_percent ?? 0) / 100);
-
-  if (!Number.isFinite(price_inr) || price_inr <= 0 || price_inr > maxAcceptablePrice) {
+  if (
+    !Number.isFinite(price_inr) ||
+    price_inr <= 0 ||
+    price_inr > Number(rfq.ceiling_price_inr)
+  ) {
     return NextResponse.json(
-      {
-        error: `Price must be a positive number, at most ₹${maxAcceptablePrice.toFixed(2)}/kg${
-          Number(rfq.min_decrement_percent) > 0
-            ? ` (minimum ${rfq.min_decrement_percent}% discount off the ₹${rfq.ceiling_price_inr}/kg ceiling)`
-            : ""
-        }.`,
-      },
+      { error: "Price must be a positive number that does not exceed the ceiling price." },
       { status: 400 }
     );
   }

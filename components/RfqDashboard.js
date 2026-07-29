@@ -14,7 +14,6 @@ const DEFAULT_FORM = {
   ceiling_price_inr: "",
   description: "",
   window_minutes: "45",
-  min_decrement_percent: "0",
   auto_extend_enabled: true,
 };
 
@@ -194,13 +193,6 @@ export default function RfqDashboard() {
       setFormError("Window minutes must be a positive whole number.");
       return;
     }
-    const minDecrementPercent =
-      form.min_decrement_percent === "" ? 0 : Number(form.min_decrement_percent);
-    if (!Number.isFinite(minDecrementPercent) || minDecrementPercent < 0 || minDecrementPercent > 50) {
-      setFormError("Minimum discount off ceiling (%) must be between 0 and 50.");
-      return;
-    }
-
     setSubmitting(true);
     try {
       const res = await fetch("/api/rfqs", {
@@ -212,7 +204,6 @@ export default function RfqDashboard() {
           ceiling_price_inr: Number(form.ceiling_price_inr),
           description: form.description,
           window_minutes: windowMinutes,
-          min_decrement_percent: minDecrementPercent,
           auto_extend_enabled: form.auto_extend_enabled,
         }),
       });
@@ -521,25 +512,6 @@ export default function RfqDashboard() {
                 placeholder="45"
                 className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
-            </div>
-            <div>
-              <label htmlFor="rfq-min-decrement" className="block text-sm font-medium text-slate-700">
-                Minimum discount off ceiling (%)
-              </label>
-              <input
-                id="rfq-min-decrement"
-                type="number"
-                min="0"
-                max="50"
-                step="any"
-                value={form.min_decrement_percent}
-                onChange={(e) => updateField("min_decrement_percent", e.target.value)}
-                placeholder="0"
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                Vendors must bid at or below ceiling &times; (1 &minus; this %). 0 = no minimum.
-              </p>
             </div>
           </div>
 

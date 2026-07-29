@@ -19,12 +19,6 @@ function validateRfqInput(body) {
       ? DEFAULT_WINDOW_MINUTES
       : Number(rawWindow);
 
-  const rawDecrement = body?.min_decrement_percent;
-  const min_decrement_percent =
-    rawDecrement === undefined || rawDecrement === null || rawDecrement === ""
-      ? 0
-      : Number(rawDecrement);
-
   const auto_extend_enabled = body?.auto_extend_enabled !== false;
 
   if (!material) {
@@ -39,9 +33,6 @@ function validateRfqInput(body) {
   if (!Number.isInteger(window_minutes) || window_minutes <= 0) {
     return { error: "Window minutes must be a positive whole number." };
   }
-  if (!Number.isFinite(min_decrement_percent) || min_decrement_percent < 0 || min_decrement_percent > 50) {
-    return { error: "Minimum discount off ceiling (%) must be between 0 and 50." };
-  }
 
   return {
     value: {
@@ -50,7 +41,6 @@ function validateRfqInput(body) {
       ceiling_price_inr,
       description: description || null,
       window_minutes,
-      min_decrement_percent,
       auto_extend_enabled,
     },
   };

@@ -5,7 +5,7 @@ import { closeExpiredRfqs } from "@/lib/closeExpired";
 import { getRankedBids, findRank } from "@/lib/rankBids";
 
 const RFQ_FIELDS =
-  "id, material, quantity_kg, ceiling_price_inr, description, status, window_end, min_decrement_percent, auto_extend_enabled, extension_count, paused_at";
+  "id, material, quantity_kg, ceiling_price_inr, description, status, window_end, auto_extend_enabled, extension_count, paused_at";
 
 export async function GET() {
   const vendor = await requireVendor();
