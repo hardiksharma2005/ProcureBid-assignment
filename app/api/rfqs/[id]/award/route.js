@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireBuyer } from "@/lib/requireBuyer";
 import { getRankedBids } from "@/lib/rankBids";
 import { sendMail } from "@/lib/mailer";
+import { logActivity } from "@/lib/auditLog";
 
 function escapeHtml(value) {
   return String(value)
@@ -125,6 +126,19 @@ export async function POST(request, { params }) {
     console.error("Failed to mark RFQ as awarded", updateError);
     return NextResponse.json({ error: "Failed to mark RFQ as awarded." }, { status: 500 });
   }
+
+  await logActivity({
+    rfq_id: id,
+    actor_email: buyerEmail,
+    actor_role: "buyer",
+    action: "awarded",
+    details: {
+      vendor: winner.vendor_name,
+      score: winner.score,
+      overridden,
+      reason,
+    },
+  });
 
   // Emails are best-effort from here — the award itself is already
   // committed, so a send failure shouldn't make the request look failed.

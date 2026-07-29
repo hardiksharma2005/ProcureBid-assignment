@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import BidRevealPanel from "./BidRevealPanel";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ToastProvider";
+import { formatInr } from "@/lib/formatInr";
 
 const DEFAULT_FORM = {
   material: "",
@@ -13,6 +14,8 @@ const DEFAULT_FORM = {
   ceiling_price_inr: "",
   description: "",
   window_minutes: "45",
+  min_decrement_percent: "0",
+  auto_extend_enabled: true,
 };
 
 const STATUS_STYLES = {
@@ -60,6 +63,7 @@ export default function RfqDashboard() {
   const [aiError, setAiError] = useState(null);
   const [ceilingSuggestion, setCeilingSuggestion] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [stats, setStats] = useState(null);
 
   const fetchRfqs = useCallback(async () => {
     setLoading(true);
@@ -78,9 +82,19 @@ export default function RfqDashboard() {
     }
   }, []);
 
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/stats");
+      if (res.ok) setStats(await res.json());
+    } catch {
+      // Non-critical — the summary strip just stays hidden.
+    }
+  }, []);
+
   useEffect(() => {
     fetchRfqs();
-  }, [fetchRfqs]);
+    fetchStats();
+  }, [fetchRfqs, fetchStats]);
 
   const openIds = rfqs
     .filter((r) => r.status === "open")
@@ -177,6 +191,12 @@ export default function RfqDashboard() {
       setFormError("Window minutes must be a positive whole number.");
       return;
     }
+    const minDecrementPercent =
+      form.min_decrement_percent === "" ? 0 : Number(form.min_decrement_percent);
+    if (!Number.isFinite(minDecrementPercent) || minDecrementPercent < 0 || minDecrementPercent > 50) {
+      setFormError("Minimum discount off ceiling (%) must be between 0 and 50.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -189,6 +209,8 @@ export default function RfqDashboard() {
           ceiling_price_inr: Number(form.ceiling_price_inr),
           description: form.description,
           window_minutes: windowMinutes,
+          min_decrement_percent: minDecrementPercent,
+          auto_extend_enabled: form.auto_extend_enabled,
         }),
       });
       const body = await res.json();
@@ -212,6 +234,7 @@ export default function RfqDashboard() {
 
   function updateRfqInList(updatedRfq) {
     setRfqs((prev) => prev.map((r) => (r.id === updatedRfq.id ? updatedRfq : r)));
+    fetchStats();
   }
 
   function requestPublish(rfq) {
@@ -274,6 +297,43 @@ export default function RfqDashboard() {
 
   return (
     <div className="w-full max-w-3xl">
+      {stats && (
+        <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">RFQs run</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{stats.total_rfqs}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Awarded</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{stats.total_awarded}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Cumulative saved
+            </p>
+            <p className="mt-1 text-xl font-bold text-green-700">
+              {formatInr(stats.cumulative_savings_inr)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Avg. savings
+            </p>
+            <p className="mt-1 text-xl font-bold text-slate-900">
+              {stats.avg_savings_percent.toFixed(1)}%
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Avg. bids/RFQ
+            </p>
+            <p className="mt-1 text-xl font-bold text-slate-900">
+              {stats.avg_bids_per_rfq.toFixed(1)}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Create RFQ</h2>
 
@@ -387,6 +447,42 @@ export default function RfqDashboard() {
                 className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
+            <div>
+              <label htmlFor="rfq-min-decrement" className="block text-sm font-medium text-slate-700">
+                Minimum discount off ceiling (%)
+              </label>
+              <input
+                id="rfq-min-decrement"
+                type="number"
+                min="0"
+                max="50"
+                step="any"
+                value={form.min_decrement_percent}
+                onChange={(e) => updateField("min_decrement_percent", e.target.value)}
+                placeholder="0"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Vendors must bid at or below ceiling &times; (1 &minus; this %). 0 = no minimum.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2">
+            <input
+              id="rfq-auto-extend"
+              type="checkbox"
+              checked={form.auto_extend_enabled}
+              onChange={(e) => updateField("auto_extend_enabled", e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <label htmlFor="rfq-auto-extend" className="text-sm text-slate-700">
+              Auto-extend if a bid arrives in the final minutes
+              <span className="block text-xs text-slate-500">
+                Adds 3 minutes (up to 3 times) when a bid lands in the last 2 minutes, so a
+                last-second bid can&apos;t unfairly lock others out.
+              </span>
+            </label>
           </div>
 
           <div>

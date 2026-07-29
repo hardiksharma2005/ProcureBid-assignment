@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import ConfirmDialog from "./ConfirmDialog";
+import ActivityLog from "./ActivityLog";
 import { useToast } from "./ToastProvider";
+import { formatInr } from "@/lib/formatInr";
 
 function formatPoints(value, max) {
   return `${value.toFixed(2)} / ${max}`;
@@ -17,6 +19,7 @@ export default function BidRevealPanel({ rfq, onClose, onRfqUpdated, onRelaunch,
   const [awarding, setAwarding] = useState(false);
   const [awardTarget, setAwardTarget] = useState(null);
   const [awardReason, setAwardReason] = useState("");
+  const [tab, setTab] = useState("bids");
 
   const loadBids = useCallback(async () => {
     setLoading(true);
@@ -99,6 +102,17 @@ export default function BidRevealPanel({ rfq, onClose, onRfqUpdated, onRelaunch,
     ? bids?.find((bid) => bid.vendor_id === award.vendor_id)
     : bids?.find((bid) => bid.rank === 1);
 
+  let savings = null;
+  if (rfq.status === "awarded" && winner) {
+    const baseline = Number(rfq.ceiling_price_inr) * Number(rfq.quantity_kg);
+    const final = Number(winner.price_inr) * Number(rfq.quantity_kg);
+    const amount = baseline - final;
+    savings = {
+      amount,
+      percent: baseline > 0 ? (amount / baseline) * 100 : 0,
+    };
+  }
+
   return (
     <>
       <div
@@ -133,6 +147,12 @@ export default function BidRevealPanel({ rfq, onClose, onRfqUpdated, onRelaunch,
             </div>
           )}
 
+          {rfq.status === "awarded" && savings && (
+            <p className="mt-2 text-sm font-medium text-green-700">
+              Saved {formatInr(savings.amount)} ({savings.percent.toFixed(1)}%) against ceiling
+            </p>
+          )}
+
           {rfq.status === "awarded" && award?.overridden && award?.award_reason && (
             <p className="mt-2 text-sm text-slate-600">
               <span className="font-medium text-slate-700">Reason for override:</span>{" "}
@@ -146,10 +166,32 @@ export default function BidRevealPanel({ rfq, onClose, onRfqUpdated, onRelaunch,
             </p>
           )}
 
+          <div className="mt-4 flex gap-1 border-b border-slate-200">
+            {["bids", "activity"].map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium capitalize transition ${
+                  tab === t
+                    ? "border-indigo-600 text-indigo-600"
+                    : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {t === "bids" ? "Bids" : "Activity"}
+              </button>
+            ))}
+          </div>
+
           {loading && <p className="mt-6 text-center text-slate-400">Loading bids...</p>}
           {loadError && <p className="mt-6 text-center text-red-600">{loadError}</p>}
 
-          {!loading && !loadError && bids && (
+          {tab === "activity" && (
+            <div className="mt-4">
+              <ActivityLog rfqId={rfq.id} />
+            </div>
+          )}
+
+          {tab === "bids" && !loading && !loadError && bids && (
             <div className="mt-6 overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">

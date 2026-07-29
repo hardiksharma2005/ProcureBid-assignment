@@ -4,6 +4,7 @@ import { requireBuyer } from "@/lib/requireBuyer";
 import { sendMail } from "@/lib/mailer";
 import { getOrigin } from "@/lib/getOrigin";
 import { broadcastBidsChanged } from "@/lib/broadcastBidsChanged";
+import { logActivity } from "@/lib/auditLog";
 
 function escapeHtml(value) {
   return String(value)
@@ -85,6 +86,14 @@ export async function POST(request, { params }) {
   } catch (err) {
     console.error("Failed to broadcast bids_changed after early close", err);
   }
+
+  await logActivity({
+    rfq_id: id,
+    actor_email: buyerEmail,
+    actor_role: "buyer",
+    action: "closed_early",
+    details: null,
+  });
 
   return NextResponse.json({ rfq: updatedRfq, emailErrors });
 }
