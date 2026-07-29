@@ -70,7 +70,8 @@ export async function GET() {
       .from("rfqs")
       .select(RFQ_FIELDS)
       .in("id", myRfqIds)
-      .in("status", ["closed", "awarded", "reauction"]);
+      .in("status", ["closed", "awarded", "reauction"])
+      .is("archived_at", null);
 
     if (decidedError) {
       console.error("Failed to fetch decided RFQs", decidedError);

@@ -188,6 +188,12 @@ grant select, insert on public.activity_log to service_role;
 grant select on public.activity_log to authenticated;
 
 -- ----------------------------------------------------------------------------
+-- Archive migration — view-only archiving of decided RFQs. Safe to re-run.
+-- ----------------------------------------------------------------------------
+
+alter table rfqs add column if not exists archived_at timestamptz;
+
+-- ----------------------------------------------------------------------------
 -- Seed data
 -- ----------------------------------------------------------------------------
 

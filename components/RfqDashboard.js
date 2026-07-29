@@ -56,13 +56,16 @@ export default function RfqDashboard() {
   const [publishingId, setPublishingId] = useState(null);
   const [viewingRfq, setViewingRfq] = useState(null);
   const [relaunchingId, setRelaunchingId] = useState(null);
-  const [confirmDialog, setConfirmDialog] = useState(null); // { type: "publish" | "relaunch", rfq }
+  const [confirmDialog, setConfirmDialog] = useState(null); // { type: "publish" | "relaunch" | "archive" | "delete", rfq }
   const { push: pushToast } = useToast();
   const [aiText, setAiText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [ceilingSuggestion, setCeilingSuggestion] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivingId, setArchivingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const [stats, setStats] = useState(null);
 
   const fetchRfqs = useCallback(async () => {
@@ -245,6 +248,14 @@ export default function RfqDashboard() {
     setConfirmDialog({ type: "relaunch", rfq });
   }
 
+  function requestArchive(rfq) {
+    setConfirmDialog({ type: "archive", rfq });
+  }
+
+  function requestDelete(rfq) {
+    setConfirmDialog({ type: "delete", rfq });
+  }
+
   async function handlePublish(rfq) {
     setPublishingId(rfq.id);
     try {
@@ -294,6 +305,70 @@ export default function RfqDashboard() {
       setConfirmDialog(null);
     }
   }
+
+  async function handleArchive(rfq) {
+    setArchivingId(rfq.id);
+    try {
+      const res = await fetch(`/api/rfqs/${rfq.id}/archive`, { method: "POST" });
+      const body = await res.json();
+
+      if (!res.ok) {
+        pushToast({ variant: "error", message: body.error ?? "Failed to archive RFQ." });
+        return;
+      }
+
+      updateRfqInList(body.rfq);
+      pushToast({ variant: "success", message: "RFQ archived." });
+    } catch {
+      pushToast({ variant: "error", message: "Something went wrong. Please try again." });
+    } finally {
+      setArchivingId(null);
+      setConfirmDialog(null);
+    }
+  }
+
+  async function handleUnarchive(rfq) {
+    setArchivingId(rfq.id);
+    try {
+      const res = await fetch(`/api/rfqs/${rfq.id}/archive`, { method: "POST" });
+      const body = await res.json();
+
+      if (!res.ok) {
+        pushToast({ variant: "error", message: body.error ?? "Failed to unarchive RFQ." });
+        return;
+      }
+
+      updateRfqInList(body.rfq);
+      pushToast({ variant: "success", message: "RFQ unarchived." });
+    } catch {
+      pushToast({ variant: "error", message: "Something went wrong. Please try again." });
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
+  async function handleDelete(rfq) {
+    setDeletingId(rfq.id);
+    try {
+      const res = await fetch(`/api/rfqs/${rfq.id}`, { method: "DELETE" });
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        pushToast({ variant: "error", message: body.error ?? "Failed to delete RFQ." });
+        return;
+      }
+
+      setRfqs((prev) => prev.filter((r) => r.id !== rfq.id));
+      pushToast({ variant: "success", message: "Draft RFQ deleted." });
+    } catch {
+      pushToast({ variant: "error", message: "Something went wrong. Please try again." });
+    } finally {
+      setDeletingId(null);
+      setConfirmDialog(null);
+    }
+  }
+
+  const visibleRfqs = showArchived ? rfqs : rfqs.filter((r) => !r.archived_at);
 
   return (
     <div className="w-full max-w-3xl">
@@ -512,7 +587,18 @@ export default function RfqDashboard() {
       </div>
 
       <div className="mt-8">
-        <h2 className="text-lg font-semibold text-slate-900">RFQs</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900">RFQs</h2>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            Show archived
+          </label>
+        </div>
 
         {loadError && <p className="mt-2 text-sm text-red-600">{loadError}</p>}
 
@@ -539,75 +625,116 @@ export default function RfqDashboard() {
                 </tr>
               )}
 
-              {!loading && rfqs.length === 0 && (
+              {!loading && visibleRfqs.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-6 text-center text-slate-400">
-                    No RFQs yet.
+                    {rfqs.length === 0 ? "No RFQs yet." : "No RFQs to show."}
                   </td>
                 </tr>
               )}
 
-              {rfqs.map((rfq) => (
-                <tr key={rfq.id}>
-                  <td className="px-4 py-3 font-medium text-slate-900">{rfq.material}</td>
-                  <td className="px-4 py-3 text-slate-600">{rfq.quantity_kg} kg</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    &#8377;{rfq.ceiling_price_inr}/kg
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={rfq.status} />
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {rfq.status === "draft" ? "—" : rfq.bid_count}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {rfq.status === "open" ? formatIST(rfq.window_end) : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {new Date(rfq.created_at).toLocaleDateString("en-IN")}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      {rfq.status === "draft" && (
-                        <button
-                          onClick={() => requestPublish(rfq)}
-                          disabled={publishingId === rfq.id}
-                          className="rounded-md border border-indigo-600 px-3 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
-                        >
-                          {publishingId === rfq.id ? "Publishing..." : "Publish & notify vendors"}
-                        </button>
-                      )}
-                      {rfq.status === "open" && (
-                        <Link
-                          href={`/buyer/monitor/${rfq.id}`}
-                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                        >
-                          Monitor
-                        </Link>
-                      )}
-                      {(rfq.status === "closed" ||
-                        rfq.status === "awarded" ||
-                        rfq.status === "reauction") && (
-                        <button
-                          onClick={() => setViewingRfq(rfq)}
-                          className="rounded-md border border-indigo-600 px-3 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50"
-                        >
-                          View bids &amp; award
-                        </button>
-                      )}
-                      {rfq.status === "reauction" && (
-                        <button
-                          onClick={() => requestRelaunch(rfq)}
-                          disabled={relaunchingId === rfq.id}
-                          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50"
-                        >
-                          {relaunchingId === rfq.id ? "Relaunching..." : "Relaunch RFQ"}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {visibleRfqs.map((rfq) => {
+                const archived = !!rfq.archived_at;
+                const archivable =
+                  !archived &&
+                  (rfq.status === "closed" || rfq.status === "awarded" || rfq.status === "reauction");
+
+                return (
+                  <tr key={rfq.id} className={archived ? "opacity-60" : undefined}>
+                    <td className="px-4 py-3 font-medium text-slate-900">{rfq.material}</td>
+                    <td className="px-4 py-3 text-slate-600">{rfq.quantity_kg} kg</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      &#8377;{rfq.ceiling_price_inr}/kg
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        <StatusBadge status={rfq.status} />
+                        {archived && (
+                          <span className="inline-block rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-semibold capitalize text-slate-600">
+                            Archived
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {rfq.status === "draft" ? "—" : rfq.bid_count}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {rfq.status === "open" ? formatIST(rfq.window_end) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {new Date(rfq.created_at).toLocaleDateString("en-IN")}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {rfq.status === "draft" && (
+                          <button
+                            onClick={() => requestPublish(rfq)}
+                            disabled={publishingId === rfq.id}
+                            className="rounded-md border border-indigo-600 px-3 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
+                          >
+                            {publishingId === rfq.id ? "Publishing..." : "Publish & notify vendors"}
+                          </button>
+                        )}
+                        {rfq.status === "draft" && (
+                          <button
+                            onClick={() => requestDelete(rfq)}
+                            disabled={deletingId === rfq.id}
+                            className="rounded-md border border-red-600 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                          >
+                            {deletingId === rfq.id ? "Deleting..." : "Delete"}
+                          </button>
+                        )}
+                        {rfq.status === "open" && (
+                          <Link
+                            href={`/buyer/monitor/${rfq.id}`}
+                            className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            Monitor
+                          </Link>
+                        )}
+                        {(rfq.status === "closed" ||
+                          rfq.status === "awarded" ||
+                          rfq.status === "reauction") && (
+                          <button
+                            onClick={() => setViewingRfq(rfq)}
+                            className="rounded-md border border-indigo-600 px-3 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50"
+                          >
+                            View bids &amp; award
+                          </button>
+                        )}
+                        {rfq.status === "reauction" && (
+                          <button
+                            onClick={() => requestRelaunch(rfq)}
+                            disabled={relaunchingId === rfq.id}
+                            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50"
+                          >
+                            {relaunchingId === rfq.id ? "Relaunching..." : "Relaunch RFQ"}
+                          </button>
+                        )}
+                        {archivable && (
+                          <button
+                            onClick={() => requestArchive(rfq)}
+                            disabled={archivingId === rfq.id}
+                            className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            Archive
+                          </button>
+                        )}
+                        {archived && (
+                          <button
+                            onClick={() => handleUnarchive(rfq)}
+                            disabled={archivingId === rfq.id}
+                            className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            {archivingId === rfq.id ? "Unarchiving..." : "Unarchive"}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -631,23 +758,46 @@ export default function RfqDashboard() {
         title={
           confirmDialog?.type === "publish"
             ? `Publish "${confirmDialog.rfq.material}"?`
-            : `Relaunch "${confirmDialog?.rfq.material}"?`
+            : confirmDialog?.type === "relaunch"
+              ? `Relaunch "${confirmDialog.rfq.material}"?`
+              : confirmDialog?.type === "archive"
+                ? `Archive "${confirmDialog.rfq.material}"?`
+                : `Delete "${confirmDialog?.rfq.material}"?`
         }
         message={
           confirmDialog?.type === "publish"
             ? "This notifies all vendors by email and cannot be undone."
-            : "This creates a new draft RFQ with the same details."
+            : confirmDialog?.type === "relaunch"
+              ? "This creates a new draft RFQ with the same details."
+              : confirmDialog?.type === "archive"
+                ? "Archived RFQs are hidden from the default view but nothing is deleted — you can unarchive any time. Savings totals are unaffected."
+                : "This permanently deletes the draft RFQ. This cannot be undone."
         }
-        confirmLabel={confirmDialog?.type === "publish" ? "Publish" : "Relaunch"}
+        confirmLabel={
+          confirmDialog?.type === "publish"
+            ? "Publish"
+            : confirmDialog?.type === "relaunch"
+              ? "Relaunch"
+              : confirmDialog?.type === "archive"
+                ? "Archive"
+                : "Delete"
+        }
+        danger={confirmDialog?.type === "delete"}
         loading={
           confirmDialog?.type === "publish"
             ? publishingId === confirmDialog.rfq.id
-            : relaunchingId === confirmDialog?.rfq.id
+            : confirmDialog?.type === "relaunch"
+              ? relaunchingId === confirmDialog?.rfq.id
+              : confirmDialog?.type === "archive"
+                ? archivingId === confirmDialog?.rfq.id
+                : deletingId === confirmDialog?.rfq.id
         }
         onConfirm={() => {
           if (!confirmDialog) return;
           if (confirmDialog.type === "publish") handlePublish(confirmDialog.rfq);
-          else handleRelaunch(confirmDialog.rfq);
+          else if (confirmDialog.type === "relaunch") handleRelaunch(confirmDialog.rfq);
+          else if (confirmDialog.type === "archive") handleArchive(confirmDialog.rfq);
+          else handleDelete(confirmDialog.rfq);
         }}
         onCancel={() => setConfirmDialog(null)}
       />
