@@ -42,7 +42,6 @@ export async function POST(request, { params }) {
       ceiling_price_inr: rfq.ceiling_price_inr,
       description,
       window_minutes: rfq.window_minutes,
-      min_decrement_percent: rfq.min_decrement_percent,
       auto_extend_enabled: rfq.auto_extend_enabled,
       status: "draft",
     })

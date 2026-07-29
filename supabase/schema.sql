@@ -146,10 +146,13 @@ alter table awards add column if not exists award_reason text;
 alter table awards add column if not exists overridden boolean default false;
 
 -- ----------------------------------------------------------------------------
--- Tier 1 migration — buyer controls (min decrement, auto-extend, pause/
--- resume) and the activity/audit log. Safe to re-run (IF NOT EXISTS).
+-- Tier 1 migration — buyer controls (auto-extend, pause/resume) and the
+-- activity/audit log. Safe to re-run (IF NOT EXISTS).
 -- ----------------------------------------------------------------------------
 
+-- min_decrement_percent: the "minimum bid decrement" feature was removed
+-- from the app. Column kept in place (unread/unwritten by app code) to
+-- avoid a destructive migration — safe to drop later if desired.
 alter table rfqs add column if not exists min_decrement_percent numeric default 0;
 alter table rfqs add column if not exists auto_extend_enabled boolean default true;
 alter table rfqs add column if not exists extension_count integer default 0;
