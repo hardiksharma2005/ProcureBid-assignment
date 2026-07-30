@@ -7,7 +7,7 @@ A sealed-bid reverse auction platform for raw-material procurement. A buyer post
 - **Next.js 14 (App Router, JavaScript)** — buyer dashboard, vendor portal, and all API routes (Route Handlers) in one app.
 - **Supabase**
   - **Postgres** — `vendors`, `rfqs`, `bids`, `awards` tables, with Row Level Security and a `UNIQUE(rfq_id, vendor_id)` constraint enforcing one sealed bid per vendor per RFQ.
-  - **Auth** — passwordless magic-link sign-in via `@supabase/ssr`, gated by an application-level allowlist (see [Security model](#security-model)).
+  - **Auth** — email + password sign-in via `@supabase/ssr` (magic link still available as a fallback), gated by an application-level allowlist (see [Security model](#security-model)). Vendors can self-register; new accounts sit in `pending` status until a buyer approves them.
   - **Realtime (Broadcast)** — rank-only live updates when bids are placed, so both the buyer's bid count and a vendor's own rank update without a page refresh.
 - **Gmail SMTP (via Nodemailer)** — all transactional email: RFQ invites, bid outcome notifications, award confirmations.
 - **Groq (Llama 3.3 70B)** — optional AI-assisted RFQ creation: the buyer describes a requirement in plain English and gets a pre-filled form, including an indicative ceiling-price suggestion the buyer must explicitly accept.
@@ -43,7 +43,14 @@ Server-side Supabase access always goes through one of two clients (`lib/supabas
    - Enable email sign-in and allow new user signups (Authentication → Providers → Email).
    - Configure custom SMTP (Authentication → Settings → SMTP Settings) using the same Gmail credentials above, so Supabase's own auth emails send reliably.
 
-5. **Run the app**
+5. **Set initial passwords for existing users** — the buyer account(s) and any vendors seeded directly into the database (rather than through self-registration) have no password until you set one:
+   ```bash
+   npm run set-password -- someone@example.com theirNewPassword123
+   # or: PASSWORD=theirNewPassword123 npm run set-password -- someone@example.com
+   ```
+   The password is never hardcoded in the repo — pass it as a CLI argument or via the `PASSWORD` env var. Requires `npm run seed:auth` to have been run first (the auth user must already exist). Newly self-registered vendors set their own password at registration time and don't need this.
+
+6. **Run the app**
    ```bash
    npm run dev
    ```
