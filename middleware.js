@@ -51,14 +51,18 @@ export async function middleware(request) {
   }
 
   const role = await getRole(user.email);
+  const isVendorRole = role === "vendor" || role === "vendor_pending" || role === "vendor_rejected";
 
   if (path.startsWith("/buyer") && role !== "buyer") {
     const url = request.nextUrl.clone();
-    url.pathname = role === "vendor" ? "/vendor" : "/login";
+    url.pathname = isVendorRole ? "/vendor" : "/login";
     return NextResponse.redirect(url);
   }
 
-  if (path.startsWith("/vendor") && role !== "vendor") {
+  // Pending/rejected vendors are allowed onto /vendor — the page itself
+  // renders a waiting/rejection screen instead of the RFQ list, rather
+  // than bouncing them back to /login.
+  if (path.startsWith("/vendor") && !isVendorRole) {
     const url = request.nextUrl.clone();
     url.pathname = role === "buyer" ? "/buyer" : "/login";
     return NextResponse.redirect(url);

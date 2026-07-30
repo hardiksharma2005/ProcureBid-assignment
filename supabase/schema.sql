@@ -197,6 +197,22 @@ grant select on public.activity_log to authenticated;
 alter table rfqs add column if not exists archived_at timestamptz;
 
 -- ----------------------------------------------------------------------------
+-- Vendor registration + approval migration. Safe to re-run (IF NOT EXISTS).
+-- ----------------------------------------------------------------------------
+
+alter table vendors add column if not exists status text default 'approved' check (status in ('pending','approved','rejected'));
+alter table vendors add column if not exists company_name text;
+alter table vendors add column if not exists contact_phone text;
+alter table vendors add column if not exists registered_at timestamptz default now();
+alter table vendors add column if not exists approved_at timestamptz;
+alter table vendors add column if not exists rejection_reason text;
+alter table vendors alter column rating drop not null;
+
+create index if not exists idx_vendors_status on vendors(status);
+create index if not exists idx_bids_rfq on bids(rfq_id);
+create index if not exists idx_rfqs_status on rfqs(status);
+
+-- ----------------------------------------------------------------------------
 -- Seed data
 -- ----------------------------------------------------------------------------
 

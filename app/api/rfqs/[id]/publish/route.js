@@ -83,7 +83,8 @@ export async function POST(request, { params }) {
 
   const { data: vendors, error: vendorsError } = await supabaseAdmin
     .from("vendors")
-    .select("email, name");
+    .select("email, name")
+    .eq("status", "approved");
 
   if (vendorsError) {
     console.error("Failed to fetch vendors for RFQ notification", vendorsError);
